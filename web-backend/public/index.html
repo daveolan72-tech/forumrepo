@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forum | Ask, answer, discuss</title>
+  <link rel="icon" type="images/png" href="images/fr.png">
+  <link rel="stylesheet" href="css/index.css">
+</head>
+<body>
+
+  <header class="site-header">
+    <a class="brand" href="index.html"><img src="images/logo.png" alt="Logo" class="brand-logo" style="height: 50px; width: 105px;"></a>
+    <nav class="nav" aria-label="Main">
+      <a href="#categories">Categories</a>
+      <a href="#latest">Latest topics</a>
+      <a href="guidelines.html">Guidelines</a>
+    </nav>
+    <a class="login-btn" href="login.html">Log in</a>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>Real questions. Real answers.</h1>
+      <p>Join a community that helps each other out. Start a topic, share what you know, and follow the conversations you care about.</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="register.html">Create account</a>
+        <a class="btn btn-ghost" href="#latest">Browse topics</a>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="panel" id="categories">
+        <h2>Categories</h2>
+        <a class="row" href="topics.html?cat=General" data-cat="General"><div><strong>General</strong><small>Introductions and open discussion</small></div><span class="count">&hellip;</span></a>
+        <a class="row" href="topics.html?cat=Help%20%26%20Support" data-cat="Help &amp; Support"><div><strong>Help &amp; Support</strong><small>Get unstuck with a problem</small></div><span class="count">&hellip;</span></a>
+        <a class="row" href="topics.html?cat=Showcase" data-cat="Showcase"><div><strong>Showcase</strong><small>Share what you've made</small></div><span class="count">&hellip;</span></a>
+        <a class="row" href="topics.html?cat=Feedback" data-cat="Feedback"><div><strong>Feedback</strong><small>Suggestions for the community</small></div><span class="count">&hellip;</span></a>
+        <a class="row" href="topics.html?cat=Off-topic" data-cat="Off-topic"><div><strong>Off-topic</strong><small>Everything else</small></div><span class="count">&hellip;</span></a>
+      </section>
+
+      <section class="panel" id="latest">
+        <h2>Latest topics -<a href="topics.html" style="color: lightskyblue;"> View all</a></h2>
+        <p class="notice" id="db-notice" hidden></p>
+        <div id="latest-list"><div class="empty">Loading&hellip;</div></div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <p>&copy; 2026 Forum. <a href="guidelines.html">Guidelines</a> &middot; <a href="privacy.html">Privacy</a> &middot; <a href="contact.html">Contact</a></p>
+  </footer>
+
+
+  <script type="module">
+    import "./firebase-config.js"; // sets up the Firebase app; topics are readable without logging in
+    import { getApp } from "https://www.gstatic.com/firebasejs/10.7.2/firebase-app.js";
+    import { initializeFirestore, collection, query, orderBy, limit, onSnapshot, where, getCountFromServer } from "https://www.gstatic.com/firebasejs/10.7.2/firebase-firestore.js";
+
+    const db = initializeFirestore(getApp(), { experimentalAutoDetectLongPolling: true });
+
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    function timeAgo(ms) {
+      const m = Math.max(0, Math.floor((Date.now() - ms) / 60000));
+      if (m < 1) return "just now";
+      if (m < 60) return m + " min ago";
+      if (m < 1440) return Math.floor(m / 60) + " hr ago";
+      const d = Math.floor(m / 1440);
+      return d + (d === 1 ? " day ago" : " days ago");
+    }
+
+    /* ---------- Topics per category ---------- */
+    const catRows = [...document.querySelectorAll("#categories .row[data-cat]")];
+    async function loadCounts() {
+      await Promise.all(catRows.map(async (row) => {
+        const el = row.querySelector(".count");
+        try {
+          const res = await getCountFromServer(query(collection(db, "topics"), where("cat", "==", row.dataset.cat)));
+          const n = res.data().count;
+          el.textContent = n + (n === 1 ? " topic" : " topics");
+        } catch (error) {
+          console.error(error.code, error.message);
+          el.textContent = "\u2013";
+        }
+      }));
+    }
+
+    /* ---------- Latest topics (live, same as home.html) ---------- */
+    const $latest = document.getElementById("latest-list");
+    const $notice = document.getElementById("db-notice");
+    onSnapshot(
+      query(collection(db, "topics"), orderBy("createdAt", "desc"), limit(6)),
+      (snap) => {
+        $notice.hidden = true;
+        $latest.innerHTML = snap.empty
+          ? `<div class="empty">No topics yet.</div>`
+          : snap.docs.map((d) => {
+              const t = d.data({ serverTimestamps: "estimate" });
+              const created = t.createdAt ? t.createdAt.toMillis() : Date.now();
+              return `<a class="row" href="topic.html?id=${encodeURIComponent(d.id)}">
+                <div><strong>${esc(t.title)}</strong><small><span class="tag">${esc(t.cat)}</span>by ${esc(t.author)} &middot; ${timeAgo(created)}</small></div>
+                <span class="count">${t.replies || 0}<br>replies</span>
+              </a>`;
+            }).join("");
+        loadCounts(); // a topic was added or removed, so refresh the category numbers
+      },
+      (error) => {
+        console.error(error.code, error.message);
+        $latest.innerHTML = "";
+        $notice.textContent = "Couldn't load topics (" + error.code + ").";
+        $notice.hidden = false;
+      }
+    );
+  </script>
+</body>
+</html>

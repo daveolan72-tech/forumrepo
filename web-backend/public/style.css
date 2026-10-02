@@ -1,0 +1,202 @@
+@import url("https://fonts.googleapis.com/css2?family=Open+Sans:wght@200;300;400;500;600;700&display=swap");
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Open Sans", sans-serif;
+}
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  width: 100%;
+  padding: 0 10px;
+}
+body::before {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: url("images/darkblue.jpg"), #000;
+  background-position: center;
+  background-size: cover;
+}
+.wrapper {
+  width: 400px;
+  border-radius: 8px;
+  padding: 30px;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+form {
+  display: flex;
+  flex-direction: column;
+}
+h2 {
+  font-size: 2rem;
+  margin-bottom: 20px;
+  color: #fff;
+}
+.input-field {
+  position: relative;
+  border-bottom: 2px solid #ccc;
+  margin: 15px 0;
+}
+.input-field label {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  color: #fff;
+  font-size: 16px;
+  pointer-events: none;
+  transition: 0.15s ease;
+}
+.input-field input {
+  width: 100%;
+  height: 40px;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 16px;
+  color: #fff;
+}
+.input-field input:focus~label,
+.input-field input:valid~label {
+  font-size: 0.8rem;
+  top: 10px;
+  transform: translateY(-120%);
+}
+.forget {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 25px 0 18px 0;
+  color: #fff;
+}
+#remember {
+  accent-color: #fff;
+}
+.forget label {
+  display: flex;
+  align-items: center;
+}
+.forget label p {
+  margin-left: 8px;
+}
+.wrapper a {
+  color: #efefef;
+  text-decoration: none;
+}
+.wrapper a:hover {
+  text-decoration: underline;
+}
+button {
+  background: #fff;
+  color: #000;
+  font-weight: 600;
+  border: none;
+  padding: 12px 20px;
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 16px;
+  border: 2px solid transparent;
+  transition: 0.3s ease;
+}
+button:hover {
+  color: #fff;
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+}
+.register {
+  text-align: center;
+  margin-top: 30px;
+  color: #fff;
+}
+/* ---------- Register page additions ---------- */
+body { padding: 40px 10px; }
+body::before { position: fixed; inset: 0; z-index: -1; }
+.wrapper { max-width: 100%; }
+
+.brand { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 6px; color: #fff; }
+.brand-mark { width: 34px; height: 34px; border-radius: 10px 10px 10px 2px; background: #fff; color: #000; display: grid; place-items: center; font-weight: 700; }
+.brand-name { font-size: 1.15rem; font-weight: 600; }
+.tagline { color: #efefef; font-size: 0.9rem; margin-bottom: 22px; }
+
+form h2 { margin-bottom: 4px; }
+.input-field { margin: 20px 0 6px; }
+.hint { display: block; text-align: left; color: #e0e0e0; font-size: 0.75rem; margin: 6px 0 0; min-height: 1em; }
+
+.input-field .toggle {
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  background: none; border: none; padding: 4px 6px; color: #fff; font-size: 0.8rem; font-weight: 400; border-radius: 3px;
+}
+.input-field .toggle:hover { background: rgba(255, 255, 255, 0.15); border-color: transparent; }
+.input-field input[type="password"], .input-field input#password, .input-field input#confirm { padding-right: 52px; }
+
+.strength { display: flex; gap: 4px; margin-top: 8px; }
+.strength span { flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.25); transition: 0.2s; }
+.strength[data-score="1"] span:nth-child(-n+1) { background: #ff6b6b; }
+.strength[data-score="2"] span:nth-child(-n+2) { background: #ffb347; }
+.strength[data-score="3"] span:nth-child(-n+3) { background: #b8e986; }
+.strength[data-score="4"] span:nth-child(-n+4) { background: #4cd98a; }
+
+.agree { display: flex; align-items: flex-start; gap: 8px; text-align: left; color: #fff; font-size: 0.85rem; margin: 0 0 26px; cursor: pointer; }
+.agree input { accent-color: #fff; margin-top: 3px; }
+.agree a { text-decoration: underline; }
+
+.error-msg { color: #ffb3b3; font-size: 0.85rem; min-height: 1.2em; margin-bottom: 10px; text-align: left; }
+
+:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.input-field input:focus-visible { outline: none; }
+.input-field:focus-within { border-bottom-color: #fff; }
+
+/* Login page additions */
+.error-msg.ok { color: #b8e986; }
+.forget a { font-size: 0.9rem; }
+
+.forgot-below { text-align: center; margin-top: 18px; font-size: 0.9rem; color: #fff; }
+.forgot-below a { color: #efefef; }
+.forgot-below a:hover { text-decoration: underline; }
+
+/* ---------- Terms & Conditions modal ---------- */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.55);
+  animation: modal-fade 0.15s ease;
+}
+.modal-overlay[hidden] { display: none; }
+.modal-card {
+  width: 100%; max-width: 460px; max-height: 80vh;
+  overflow-y: auto;
+  border-radius: 8px;
+  padding: 24px 26px;
+  background: #06213f;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #fff;
+  text-align: left;
+  animation: modal-pop 0.18s ease;
+}
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.modal-head h3 { font-size: 1.3rem; }
+.modal-close {
+  background: none; border: none; color: #fff;
+  font-size: 1.4rem; line-height: 1; cursor: pointer;
+  padding: 4px 8px; border-radius: 3px;
+}
+.modal-close:hover { background: rgba(255, 255, 255, 0.15); }
+.modal-body { font-size: 0.9rem; color: #e0e0e0; }
+.modal-body p { margin-bottom: 12px; }
+.modal-body ul { margin: 0 0 12px 18px; }
+.modal-body li { margin-bottom: 6px; }
+.modal-body a { color: #fff; text-decoration: underline; }
+
+@keyframes modal-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modal-pop { from { opacity: 0; transform: scale(0.94) translateY(6px); } to { opacity: 1; transform: none; } }

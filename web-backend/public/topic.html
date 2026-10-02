@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forum | Topic</title>
+  <link rel="icon" type="images/png" href="images/fr.png">
+  <link rel="stylesheet" href="css/topics.css">
+</head>
+<body>
+
+  <header class="site-header">
+    <a class="brand" href="home.html"><img src="images/logo.png" alt="Logo" class="brand-logo" style="height: 50px; width: 105px;"></a>
+    <nav class="nav" aria-label="Main">
+      <a href="home.html">Home</a>
+      <a class="active" href="topics.html">All topics</a>
+      <a href="guidelines.html">Guidelines</a>
+    </nav>
+
+    <a class="login-btn" href="login.html" id="auth-out" hidden>Log in</a>
+
+    <div class="header-actions" id="auth-in" hidden>
+      <details class="menu" id="user-menu">
+        <summary aria-label="Account menu"><span class="avatar" id="avatar"></span><span class="name" id="username"></span></summary>
+        <div class="menu-list">
+          <div class="menu-email" id="user-email"></div>
+          <hr>
+          <a href="account.html?tab=profile">Your profile</a>
+          <a href="account.html?tab=topics">Your topics</a>
+          <a href="account.html?tab=settings">Settings</a>
+          <hr>
+          <a href="index.html" id="logout">Log out</a>
+        </div>
+      </details>
+    </div>
+  </header>
+
+  <main class="topic-page">
+    <a class="back-link" href="topics.html">&larr; All topics</a>
+    <p class="notice" id="notice" hidden></p>
+
+    <article class="panel topic-head" id="topic-head" hidden>
+      <span class="tag" id="t-cat"></span>
+      <h1 id="t-title"></h1>
+      <div class="meta" id="t-meta"></div>
+    </article>
+
+    <section id="replies-section" hidden>
+      <h2 class="replies-title" id="replies-title">Replies</h2>
+      <div class="reply-list" id="reply-list"></div>
+      <button type="button" class="btn btn-ghost more-replies" id="more-replies" hidden>Show more replies</button>
+    </section>
+
+    <form class="panel reply-form" id="reply-form" action="#" hidden>
+      <div class="reply-form-row">
+        <span class="avatar" id="reply-avatar" aria-hidden="true"></span>
+        <textarea id="reply-text" placeholder="Write a reply..." aria-label="Your reply" maxlength="2000" rows="3"></textarea>
+      </div>
+      <div class="reply-preview" id="reply-preview" hidden>
+        <img id="reply-preview-img" alt="Preview of the image you're attaching">
+        <button type="button" class="btn btn-ghost" id="reply-remove-img">Remove image</button>
+      </div>
+      <div class="reply-actions">
+        <input type="file" id="reply-file" accept="image/*" hidden>
+        <button type="button" class="btn btn-ghost" id="reply-add-img">Add image</button>
+        <span class="reply-hint" id="reply-hint" aria-live="polite"></span>
+        <button class="btn btn-primary" type="submit" id="reply-btn">Reply</button>
+      </div>
+      <p class="composer-error" id="reply-error" role="alert"></p>
+    </form>
+
+    <p class="panel login-prompt" id="login-prompt" hidden><a href="login.html">Log in</a> to reply to this topic.</p>
+  </main>
+
+  <footer class="site-footer">
+    <p>&copy; 2026 Forum. <a href="guidelines.html">Guidelines</a> &middot; <a href="privacy.html">Privacy</a> &middot; <a href="contact.html">Contact</a></p>
+
+  <dialog class="lightbox" id="lightbox" aria-label="Image preview"><img id="lightbox-img" alt="Full size image from the reply"></dialog>
+
+  <script type="module">
+    import { auth } from "./firebase-config.js";
+    import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.2/firebase-auth.js";
+    import { getApp } from "https://www.gstatic.com/firebasejs/10.7.2/firebase-app.js";
+    import { initializeFirestore, collection, doc, query, orderBy, limit, onSnapshot, serverTimestamp, runTransaction, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.2/firebase-firestore.js";
+
+    // Reused ang firebase-config.js 
+    const db = initializeFirestore(getApp(), { experimentalAutoDetectLongPolling: true });
+
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    function timeAgo(ms) {
+      const m = Math.max(0, Math.floor((Date.now() - ms) / 60000));
+      if (m < 1) return "just now";
+      if (m < 60) return m + " min ago";
+      if (m < 1440) return Math.floor(m / 60) + " hr ago";
+      const d = Math.floor(m / 1440);
+      return d + (d === 1 ? " day ago" : " days ago");
+    }
+    // Replies only ever store JPEG data URLs; anything else is ignored when rendering
+    const validImage = (s) => typeof s === "string" && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(s);
+
+    const topicId = new URLSearchParams(location.search).get("id");
+    let topic = null;          // { title, cat, author, createdAt, replies } once loaded
+    let currentUid = null;
+    let currentName = "you";
+    let isAdmin = false;       // account has a document in the "admins" collection
+    let authReady = false;
+    let pendingImage = "";     // compressed data URL of the image attached to the reply being written
+    let busy = false;
+
+    function showNotice(msg) { $("notice").textContent = msg; $("notice").hidden = !msg; }
+
+    function updateUI() {
+      $("topic-head").hidden = !topic;
+      $("replies-section").hidden = !topic;
+      $("reply-form").hidden = !(topic && currentUid);
+      $("login-prompt").hidden = !(topic && authReady && !currentUid);
+    }
+
+    // If subscribed ka, viewing or replying here counts as having seen the replies (clears the home page notification)
+    function markSeen() {
+      if (!currentUid || !topic) return;
+      try {
+        const key = "forum-seen-replies:" + currentUid;
+        const seen = JSON.parse(localStorage.getItem(key)) || {};
+        if (seen[topicId] !== undefined && seen[topicId] !== topic.replies) {
+          seen[topicId] = topic.replies;
+          localStorage.setItem(key, JSON.stringify(seen));
+        }
+      } catch (_) { /* storage blocked */ }
+    }
+
+    /* ---------- Header: account menu + auth ---------- */
+    const menu = $("user-menu");
+    document.addEventListener("click", (e) => { if (!menu.contains(e.target)) menu.removeAttribute("open"); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") menu.removeAttribute("open"); });
+
+    onAuthStateChanged(auth, (user) => {
+      authReady = true;
+      isAdmin = false;
+      $("auth-in").hidden = !user;
+      $("auth-out").hidden = !!user;
+      if (user) {
+        const name = user.displayName || user.email.split("@")[0];
+        currentName = name;
+        currentUid = user.uid;
+        $("username").textContent = name;
+        $("user-email").textContent = user.email;
+        $("avatar").textContent = name[0].toUpperCase();
+        $("reply-avatar").textContent = name[0].toUpperCase();
+      } else {
+        currentUid = null;
+      }
+      updateUI();
+      markSeen();
+      renderReplies();
+      if (user) {
+        // Only decides whether to show Delete buttons; the Firestore rules do the real check
+        getDoc(doc(db, "admins", user.uid)).then((d) => {
+          if (d.exists() && currentUid === user.uid) { isAdmin = true; renderReplies(); }
+        }).catch((error) => console.error(error.code, error.message));
+      }
+    });
+
+    $("logout").addEventListener("click", async (e) => {
+      e.preventDefault();
+      try { await signOut(auth); window.location.href = "index.html"; }
+      catch (error) { console.error(error.code, error.message); }
+    });
+
+    /* The topic itself (live), nag uupdate ng kusa */
+    let replyLimit = 30;
+    let unsubReplies = null;
+
+    if (!topicId || topicId.includes("/")) {
+      showNotice("This topic doesn't exist. It may have been deleted.");
+    } else {
+      onSnapshot(
+        doc(db, "topics", topicId),
+        (d) => {
+          if (!d.exists()) {
+            topic = null;
+            showNotice("This topic doesn't exist. It may have been deleted.");
+          } else {
+            const t = d.data({ serverTimestamps: "estimate" });
+            topic = {
+              title: t.title, cat: t.cat, author: t.author,
+              createdAt: t.createdAt ? t.createdAt.toMillis() : Date.now(),
+              replies: t.replies || 0
+            };
+            showNotice("");
+            document.title = topic.title + " | Forum";
+            $("t-cat").textContent = topic.cat;
+            $("t-title").textContent = topic.title;
+            $("t-meta").textContent = "Posted by " + topic.author + " \u00b7 " + timeAgo(topic.createdAt);
+            $("replies-title").textContent = topic.replies + (topic.replies === 1 ? " reply" : " replies");
+            if (!unsubReplies) watchReplies();
+            updateMore();
+            markSeen();
+          }
+          updateUI();
+        },
+        (error) => {
+          console.error(error.code, error.message);
+          showNotice("Couldn't load this topic (" + error.code + "). Check your connection and that your rules allow reads.");
+        }
+      );
+    }
+
+    /* Ang mga Replies (live, oldest first) */
+    const $list = $("reply-list");
+    let lastKey = null;      // what's currently drawn (ids, deleted flags, who's signed in); we only redraw when this changes
+    let replyDocs = [];      // [{ id, data }] from the latest snapshot
+    let repliesLoaded = false;
+    let shownCount = 0;
+    let scrollToEnd = false; // set after you post, so your new reply scrolls into view
+
+    function watchReplies() {
+      if (unsubReplies) unsubReplies();
+      unsubReplies = onSnapshot(
+        query(collection(db, "topics", topicId, "replies"), orderBy("createdAt", "asc"), limit(replyLimit)),
+        (snap) => {
+          shownCount = snap.size;
+          replyDocs = snap.docs.map((d) => ({ id: d.id, data: d.data({ serverTimestamps: "estimate" }) }));
+          repliesLoaded = true;
+          renderReplies();
+          updateMore();
+        },
+        (error) => {
+          console.error(error.code, error.message);
+          showNotice("Couldn't load replies (" + error.code + "). Check that your rules include the replies rules.");
+        }
+      );
+    }
+
+    // Redraws the list. Also called when you sign in/out so the Delete buttons appear on your own replies.
+    function renderReplies() {
+      if (!repliesLoaded) return;
+      const key = currentUid + "|" + isAdmin + "|" + replyDocs.map((r) => r.id + (r.data.deleted ? "x" : "")).join(",");
+      if (key === lastKey) return;
+      lastKey = key;
+      $list.innerHTML = replyDocs.length
+        ? replyDocs.map((r) => replyHTML(r.id, r.data)).join("")
+        : `<div class="empty">No replies yet. Be the first to reply!</div>`;
+      if (scrollToEnd && $list.lastElementChild) {
+        $list.lastElementChild.scrollIntoView({ behavior: "smooth", block: "center" });
+        scrollToEnd = false;
+      }
+    }
+
+    function replyHTML(id, r) {
+      const created = r.createdAt ? r.createdAt.toMillis() : Date.now();
+      const author = r.author || "someone";
+      // Deleted replies stay in the thread as a placeholder (the reply numbers must stay in order)
+      const body = r.deleted
+        ? `<div class="reply-text reply-deleted">This reply was deleted.</div>`
+        : (r.text ? `<div class="reply-text">${esc(r.text)}</div>` : "")
+          + (validImage(r.image) ? `<img class="reply-img" src="${r.image}" alt="Image posted by ${esc(author)}" loading="lazy">` : "");
+      const del = !r.deleted && currentUid && (isAdmin || r.authorUid === currentUid)
+        ? `<button type="button" class="delete-btn reply-delete" data-id="${esc(id)}">Delete</button>` : "";
+      return `<article class="reply">
+        <span class="avatar" aria-hidden="true">${esc(author[0].toUpperCase())}</span>
+        <div class="reply-main">
+          <div class="reply-meta"><span><strong>${esc(author)}</strong> &middot; ${timeAgo(created)}</span>${del}</div>
+          ${body}
+        </div>
+      </article>`;
+    }
+
+    function updateMore() {
+      $("more-replies").hidden = !(topic && shownCount >= replyLimit && topic.replies > shownCount);
+    }
+    $("more-replies").addEventListener("click", () => { replyLimit += 30; watchReplies(); });
+
+    // Click an image to see it larger
+    const $lightbox = $("lightbox");
+    $list.addEventListener("click", async (e) => {
+      const delBtn = e.target.closest(".reply-delete");
+      if (delBtn) {
+        if (!confirm("Delete this reply? This can't be undone.")) return;
+        delBtn.disabled = true;
+        $error.textContent = "";
+        try {
+          // Blank the content and mark it deleted; the document itself stays so reply numbering never breaks
+          await updateDoc(doc(db, "topics", topicId, "replies", delBtn.dataset.id), { text: "", image: "", deleted: true });
+        } catch (error) {
+          console.error(error.code, error.message);
+          delBtn.disabled = false;
+          $error.textContent = error.code === "permission-denied"
+            ? "Firestore blocked this delete. Check that your rules include the replies update rule."
+            : "Couldn't delete that reply. Try again.";
+        }
+        return;
+      }
+      const img = e.target.closest(".reply-img");
+      if (!img) return;
+      $("lightbox-img").src = img.src;
+      $lightbox.showModal();
+    });
+    $lightbox.addEventListener("click", () => $lightbox.close());
+
+    /* ---------- Reply composer ---------- */
+    const $form = $("reply-form");
+    const $text = $("reply-text");
+    const $error = $("reply-error");
+    const $btn = $("reply-btn");
+
+    function setBusy(flag, hint) {
+      busy = flag;
+      $btn.disabled = flag;
+      $("reply-add-img").disabled = flag;
+      $("reply-hint").textContent = hint || "";
+    }
+    function showPreview() {
+      $("reply-preview").hidden = !pendingImage;
+      $("reply-preview-img").src = pendingImage || "";
+    }
+
+    // Images are shrunk in the browser and saved inside the reply, so no extra storage service is needed
+    const MAX_IMAGE_CHARS = 300000;
+    function loadImage(file) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("unreadable image")); };
+        img.src = url;
+      });
+    }
+    async function compressImage(file) {
+      const img = await loadImage(file);
+      if (!img.naturalWidth || !img.naturalHeight) throw new Error("unreadable image");
+      let maxDim = 1280;
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.max(1, Math.round(img.naturalWidth * scale));
+        const h = Math.max(1, Math.round(img.naturalHeight * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#fff"; // JPEG has no transparency
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        for (const q of [0.8, 0.7, 0.6, 0.5]) {
+          const url = canvas.toDataURL("image/jpeg", q);
+          if (url.length <= MAX_IMAGE_CHARS) return url;
+        }
+        maxDim = Math.round(maxDim * 0.75);
+      }
+      throw new Error("image too large");
+    }
+
+    $("reply-add-img").addEventListener("click", () => $("reply-file").click());
+    $("reply-file").addEventListener("change", async () => {
+      const file = $("reply-file").files[0];
+      $("reply-file").value = "";
+      if (!file) return;
+      $error.textContent = "";
+      if (!file.type.startsWith("image/")) { $error.textContent = "That file isn't an image."; return; }
+      if (file.size > 25 * 1024 * 1024) { $error.textContent = "That image is too large (25 MB max)."; return; }
+      setBusy(true, "Processing image...");
+      try {
+        pendingImage = await compressImage(file);
+        showPreview();
+      } catch (err) {
+        console.error(err);
+        $error.textContent = "Couldn't read that image. Try a JPG, PNG or WebP."; // File type para iwas bugs(PDF soon)
+      } finally {
+        setBusy(false);
+      }
+    });
+    $("reply-remove-img").addEventListener("click", () => { pendingImage = ""; showPreview(); });
+    $text.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") $form.requestSubmit(); });
+
+    $form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (busy) return;
+      $error.textContent = "";
+      const text = $text.value.trim();
+      if (!text && !pendingImage) { $text.focus(); $error.textContent = "Write something or add an image."; return; }
+      if (!currentUid || !topic) return;
+
+      setBusy(true);
+      $btn.textContent = "Posting...";
+      try {
+        // A transaction adds the reply and bumps the topic's reply count together.
+        // The reply's ID is its number in the thread (1, 2, 3...), which is what the security rules check.
+        const topicRef = doc(db, "topics", topicId);
+        const saving = runTransaction(db, async (tx) => {
+          const snap = await tx.get(topicRef);
+          if (!snap.exists()) throw { code: "not-found" };
+          const n = (snap.data().replies || 0) + 1;
+          tx.set(doc(db, "topics", topicId, "replies", String(n)), {
+            author: currentName.slice(0, 100),
+            authorUid: currentUid,
+            text,
+            image: pendingImage,
+            createdAt: serverTimestamp()
+          });
+          tx.update(topicRef, { replies: n });
+          return n;
+        });
+        const timeout = new Promise((_, reject) => setTimeout(() => reject({ code: "timeout" }), 15000));
+        const n = await Promise.race([saving, timeout]);
+
+        $text.value = "";
+        pendingImage = "";
+        showPreview();
+        scrollToEnd = true;
+        if (n > replyLimit) { replyLimit = n; watchReplies(); } // make sure your new reply is inside the loaded window
+      } catch (error) {
+        console.error(error.code, error.message);
+        $error.textContent =
+          error.code === "permission-denied" ? "Firestore blocked this reply. Check that your security rules include the replies rules."
+          : error.code === "not-found" ? "This topic no longer exists."
+          : error.code === "timeout" ? "Couldn't reach the database, so this reply is NOT saved. Check your connection and try again."
+          : "Couldn't post your reply. Try again.";
+      } finally {
+        setBusy(false);
+        $btn.textContent = "Reply";
+      }
+    });
+  </script>
+</body>
+</html>

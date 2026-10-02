@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login</title>
+  <link rel="icon" type="images/png" href="images/fr.png">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="register.js" defer></script>
+
+
+</head>
+
+<body>
+
+  <div class="wrapper">
+    <form action="#">
+      <h2>Register</h2>
+      <div class="input-field">
+        <input type="user" id="user" required>
+        <label>Enter Username</label>
+      </div>
+        <div class="input-field">
+        <input type="email" id="email" required>
+        <label>Enter your email</label>
+      </div>
+      <div class="input-field">
+        <input type="password" id="password" required>
+        <label>Enter your password</label>
+      </div>
+      <div class="forget">
+        <label for="remember">
+          <input type="checkbox" id="remember">
+          <p>Remember me</p>
+        </label>
+        <a href="#">Forgot password?</a>
+      </div>
+      <label class="agree" for="terms">
+        <input type="checkbox" id="terms">
+        <p>I agree to the <a href="#" id="terms-link">Terms &amp; Conditions</a> and <a href="#">Privacy Policy</a></p>
+      </label>
+      <p class="error-msg" id="form-error" role="alert"></p>
+      <button id="submit" type="submit">Create Account..</button>
+      <p class="forgot-below">Already have an account? <a href="login.html">Login</a></p>
+    </form>
+  </div>
+
+  <div class="modal-overlay" id="terms-overlay" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="terms-title">
+      <div class="modal-head">
+        <h3 id="terms-title">Terms &amp; Conditions</h3>
+        <button type="button" class="modal-close" id="terms-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>By creating an account you agree to use this forum respectfully and in line with our
+          <a href="guidelines.html">Community Guidelines</a>.</p>
+        <ul>
+          <li>You are responsible for everything posted under your account.</li>
+          <li>One account per person &mdash; no duplicate or ban-evasion accounts.</li>
+          <li>No spam, harassment, hate speech, or illegal content.</li>
+          <li>We may remove content or suspend accounts that break these rules.</li>
+          <li>See our <a href="privacy.html">Privacy Policy</a> for how your data is handled.</li>
+        </ul>
+        <p>These terms may be updated from time to time; continued use of the forum means
+          you accept the current version.</p>
+      </div>
+    </div>
+  </div>
+
+</body>
+
+</html>

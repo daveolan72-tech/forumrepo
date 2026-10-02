@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forum | Home</title>
+  <link rel="icon" type="images/png" href="images/fr.png">
+  <link rel="stylesheet" href="css/topics.css">
+</head>
+<body>
+
+  <header class="site-header">
+    <a class="brand" href="home.html"><img src="images/logo.png" alt="Logo" class="brand-logo" style="height: 50px; width: 105px;"></a>
+    <nav class="nav" aria-label="Main">
+      <a href="#latest">Latest topics</a>
+      <a href="topics.html">Browse Topics</a>
+    </nav>
+
+    <div class="header-actions">
+      <a class="icon-btn" id="notif-bell" href="#notifications" aria-label="Notifications">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+        <span class="badge" id="notif-badge" hidden></span>
+      </a>
+      <details class="menu" id="user-menu">
+        <summary aria-label="Account menu"><span class="avatar" id="avatar"></span><span class="name" id="username"></span></summary>
+        <div class="menu-list">
+          <div class="menu-email" id="user-email"></div>
+          <hr>
+          <a href="account.html?tab=profile">Your profile</a>
+          <a href="account.html?tab=topics">Your topics</a>
+          <a href="account.html?tab=settings">Settings</a>
+          <hr>
+          <a href="index.html" id="logout">Log out</a>
+        </div>
+      </details>
+    </div>
+  </header>
+
+  <main>
+    <section class="welcome">
+      <h1>Welcome back, <span id="welcome-name"></span></h1>
+      <p>Post a new topic below, or check what's happening in the community.</p>
+
+      <form class="composer topics-composer" id="composer" action="#">
+        <div class="composer-row">
+          <span class="avatar" id="composer-avatar" aria-hidden="true"></span>
+          <input type="text" id="composer-title" placeholder="Start a new topic" aria-label="Topic title" maxlength="140" autocomplete="off">
+          <button class="btn btn-primary" type="submit" id="post-btn">Post</button>
+        </div>
+        <div class="composer-extra">
+          <div class="composer-extra-inner">
+            <div class="composer-tools">
+              <select id="composer-cat" class="composer-select" aria-label="Select category" required>
+                <option value="" disabled selected>Select category</option>
+              </select>
+              <button type="button" class="btn btn-ghost" id="composer-cancel">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <p class="composer-error" id="composer-error" role="alert"></p>
+      </form>
+    </section>
+
+    <div class="grid home">
+      <section class="panel" id="latest">
+        <h2>Latest topics <a href="topics.html">View all</a></h2>
+        <p class="notice" id="db-notice" hidden>Couldn't load saved topics. Check that Firestore is created and your rules allow reads.</p>
+        <div id="latest-list"></div>
+      </section>
+
+      <div class="stack">
+        <section class="panel" id="notifications">
+          <h2>Notifications <a href="#" id="mark-read" hidden>Mark all read</a></h2>
+          <div id="notes-list"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <p>&copy; 2026 Forum. <a href="guidelines.html">Guidelines</a> &middot; <a href="privacy.html">Privacy</a> &middot; <a href="contact.html">Contact</a></p>
+  </footer>
+
+  <script type="module">
+    import { auth } from "./firebase-config.js";
+    import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.2/firebase-auth.js";
+    import { getApp } from "https://www.gstatic.com/firebasejs/10.7.2/firebase-app.js";
+    import { initializeFirestore, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, doc, where } from "https://www.gstatic.com/firebasejs/10.7.2/firebase-firestore.js";
+
+    // firebase-config.js already initialised the app, so reuse it
+    const db = initializeFirestore(getApp(), { experimentalAutoDetectLongPolling: true });
+    const categories = ["General", "Help & Support", "Showcase", "Feedback", "Off-topic"];
+
+    /* ---------- Header: account menu + auth ---------- */
+    const menu = document.getElementById("user-menu");
+    document.addEventListener("click", (e) => { if (!menu.contains(e.target)) menu.removeAttribute("open"); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") menu.removeAttribute("open"); });
+
+    let currentName = "you";
+    let currentUid = null;
+
+    onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        window.location.href = "login.html";
+        return;
+      }
+      const name = user.displayName || user.email.split("@")[0];
+      currentName = name;
+      currentUid = user.uid;
+      document.getElementById("composer-avatar").textContent = name[0].toUpperCase();
+      document.getElementById("username").textContent = name;
+      document.getElementById("welcome-name").textContent = name;
+      document.getElementById("user-email").textContent = user.email;
+      document.querySelectorAll(".avatar").forEach(a => a.textContent = name[0].toUpperCase());
+      startNotifications(user.uid);
+    });
+
+    document.getElementById("logout").addEventListener("click", async (e) => {
+      e.preventDefault();
+      try {
+        await signOut(auth);
+        window.location.href = "index.html";
+      } catch (error) {
+        console.error(error.code, error.message);
+      }
+    });
+
+    /* ---------- Shared helpers (same as topics.html) ---------- */
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    function timeAgo(createdAtMs) {
+      const m = Math.max(0, Math.floor((Date.now() - createdAtMs) / 60000));
+      if (m < 1) return "just now";
+      if (m < 60) return m + " min ago";
+      if (m < 1440) return Math.floor(m / 60) + " hr ago";
+      const d = Math.floor(m / 1440);
+      return d + (d === 1 ? " day ago" : " days ago");
+    }
+
+    /* ---------- Latest topics: compact, read-only preview of topics.html ---------- */
+    const $latest = document.getElementById("latest-list");
+    onSnapshot(
+      query(collection(db, "topics"), orderBy("createdAt", "desc"), limit(6)),
+      (snap) => {
+        document.getElementById("db-notice").hidden = true;
+        if (snap.empty) {
+          $latest.innerHTML = `<div class="empty">No topics yet. Be the first to post!</div>`;
+          return;
+        }
+        $latest.innerHTML = snap.docs.map((d) => {
+          const t = d.data({ serverTimestamps: "estimate" });
+          const created = t.createdAt ? t.createdAt.toMillis() : Date.now();
+          return `<a class="row" href="topic.html?id=${d.id}">
+            <div><strong>${esc(t.title)}</strong><small><span class="tag">${esc(t.cat)}</span>by ${esc(t.author)} &middot; ${timeAgo(created)}</small></div>
+            <span class="count">${t.replies || 0}<br>replies</span>
+          </a>`;
+        }).join("");
+      },
+      (error) => {
+        console.error(error.code, error.message);
+        const notice = document.getElementById("db-notice");
+        notice.textContent = "Couldn't load saved topics (" + error.code + ") using project \"" + getApp().options.projectId + "\". Details: " + error.message;
+        notice.hidden = false;
+      }
+    );
+
+    /* ---------- Notifications: new replies on topics you're subscribed to ---------- */
+    const $noteList = document.getElementById("notes-list");
+    const $badge = document.getElementById("notif-badge");
+    const $bell = document.getElementById("notif-bell");
+    const $markRead = document.getElementById("mark-read");
+
+    const subs = {};        // topicId -> true (from your subscriptions)
+    const topicInfo = {};   // topicId -> { title, replies }
+    const topicUnsubs = new Map(); // topicId -> unsubscribe fn for that topic's live listener
+    const changedAt = {};   // topicId -> when a new reply arrived this session (for ordering)
+    let seen = {};          // topicId -> reply count you've already seen
+    let seenKey = "";
+    let unsubSubs = null;
+
+    function loadSeen() { try { seen = JSON.parse(localStorage.getItem(seenKey)) || {}; } catch (_) { seen = {}; } }
+    function saveSeen() { try { localStorage.setItem(seenKey, JSON.stringify(seen)); } catch (_) { /* storage blocked */ } }
+
+    function startNotifications(uid) {
+      seenKey = "forum-seen-replies:" + uid;
+      loadSeen();
+      if (unsubSubs) unsubSubs();
+      unsubSubs = onSnapshot(
+        query(collection(db, "subscriptions"), where("uid", "==", uid)),
+        (snap) => {
+          Object.keys(subs).forEach((k) => delete subs[k]);
+          snap.forEach((d) => { subs[d.data().topicId] = true; });
+          syncTopicListeners();
+        },
+        (error) => console.error(error.code, error.message)
+      );
+    }
+
+    // One live listener per subscribed topic, so we always have its current reply count
+    function syncTopicListeners() {
+      for (const [id, unsub] of topicUnsubs) {
+        if (!subs[id]) { // unsubscribed: stop listening and forget it
+          unsub();
+          topicUnsubs.delete(id);
+          delete topicInfo[id];
+          delete seen[id];
+          saveSeen();
+        }
+      }
+      for (const id of Object.keys(subs)) {
+        if (topicUnsubs.has(id)) continue;
+        topicUnsubs.set(id, onSnapshot(
+          doc(db, "topics", id),
+          (d) => {
+            if (!d.exists()) { delete topicInfo[id]; }
+            else {
+              const t = d.data();
+              const replies = t.replies || 0;
+              const prev = topicInfo[id];
+              if (prev && replies > prev.replies) changedAt[id] = Date.now();
+              topicInfo[id] = { title: t.title, replies };
+            }
+            renderNotifications();
+          },
+          (error) => console.error(error.code, error.message)
+        ));
+      }
+      renderNotifications();
+    }
+
+    function renderNotifications() {
+      const items = [];
+      let total = 0, dirty = false;
+      for (const id of Object.keys(topicInfo)) {
+        const { title, replies } = topicInfo[id];
+        // First time we see a topic, start counting from its current replies (no burst of old activity)
+        if (seen[id] === undefined || seen[id] > replies) { seen[id] = replies; dirty = true; }
+        const fresh = replies - seen[id];
+        if (fresh > 0) { total += fresh; items.push({ id, title, fresh }); }
+      }
+      if (dirty) saveSeen();
+      items.sort((a, b) => (changedAt[b.id] || 0) - (changedAt[a.id] || 0));
+
+      $noteList.innerHTML = items.length
+        ? items.map((n) => `<a class="note unread" href="topic.html?id=${encodeURIComponent(n.id)}" data-id="${esc(n.id)}">
+            <strong>${esc(n.title)}</strong><small>${n.fresh} new ${n.fresh === 1 ? "reply" : "replies"}</small>
+          </a>`).join("")
+        : `<div class="note notes-empty">No new replies. Subscribe to a topic to get notified here.</div>`;
+
+      $badge.textContent = total > 99 ? "99+" : total;
+      $badge.hidden = total === 0;
+      $markRead.hidden = total === 0;
+      $bell.setAttribute("aria-label", total ? "Notifications, " + total + " unread" : "Notifications");
+    }
+
+    // Opening a notification marks that topic as read
+    $noteList.addEventListener("click", (e) => {
+      const a = e.target.closest("a.note");
+      if (!a || !topicInfo[a.dataset.id]) return;
+      seen[a.dataset.id] = topicInfo[a.dataset.id].replies;
+      saveSeen();
+    });
+
+    $markRead.addEventListener("click", (e) => {
+      e.preventDefault();
+      Object.keys(topicInfo).forEach((id) => { seen[id] = topicInfo[id].replies; });
+      saveSeen();
+      renderNotifications();
+    });
+
+    /* ---------- Composer: same expanding behaviour + Firestore save as topics.html ---------- */
+    const $composer = document.getElementById("composer");
+    const $title = document.getElementById("composer-title");
+    const $catSelect = document.getElementById("composer-cat");
+    const $composerError = document.getElementById("composer-error");
+    const $postBtn = document.getElementById("post-btn");
+
+    $catSelect.insertAdjacentHTML("beforeend", categories.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join(""));
+
+    const openComposer = () => $composer.classList.add("open");
+    const closeComposer = () => { $composer.classList.remove("open"); $composerError.textContent = ""; };
+    const resetComposer = () => { $title.value = ""; $catSelect.value = ""; closeComposer(); };
+
+    $composer.addEventListener("focusin", openComposer);
+    document.getElementById("composer-cancel").addEventListener("click", () => { resetComposer(); document.activeElement.blur(); });
+    $composer.addEventListener("keydown", (e) => { if (e.key === "Escape") { resetComposer(); document.activeElement.blur(); } });
+    // Clicking elsewhere closes it, unless you've already typed or chosen something
+    document.addEventListener("click", (e) => {
+      if (!$composer.contains(e.target) && !$title.value.trim() && !$catSelect.value) closeComposer();
+    });
+
+    $composer.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      $composerError.textContent = "";
+      const title = $title.value.trim();
+      const cat = $catSelect.value;
+
+      if (!title) { $title.focus(); $composerError.textContent = "Give your topic a title."; return; }
+      if (!cat) { openComposer(); $catSelect.focus(); $composerError.textContent = "Select a category for your topic."; return; }
+      if (!currentUid) return;
+
+      $postBtn.disabled = true;
+      $postBtn.textContent = "Posting...";
+      try {
+        // If the database never confirms the save, give up after 10s and say so
+        const saving = addDoc(collection(db, "topics"), {
+          title, cat,
+          author: currentName,
+          authorUid: currentUid,
+          createdAt: serverTimestamp(),
+          replies: 0,
+          score: 1
+        });
+        const timeout = new Promise((_, reject) => setTimeout(() => reject({ code: "timeout" }), 10000));
+        await Promise.race([saving, timeout]);
+        // Take them to the full Topics page (sorted by New) so they land right on the post they just made
+        window.location.href = "topics.html?sort=new";
+        return;
+      } catch (error) {
+        console.error(error.code, error.message);
+        $composerError.textContent =
+          error.code === "permission-denied" ? "Firestore blocked this post. Check your security rules."
+          : error.code === "timeout" ? "Couldn't reach the database, so this post is NOT saved. Check that Firestore is created for this project and that no ad blocker is blocking it."
+          : "Couldn't post your topic. Try again.";
+      } finally {
+        $postBtn.disabled = false;
+        $postBtn.textContent = "Post";
+      }
+    });
+  </script>
+</body>
+</html>

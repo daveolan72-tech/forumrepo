@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forum | Login</title>
+  <link rel="icon" type="images/png" href="images/fr.png">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="login.js" defer></script>
+</head>
+
+<body>
+  <div class="wrapper">
+    <div class="brand">
+  <img src="images/logo.png" alt="Logo" class="brand-logo" style="height: 100px; width: 210px;">
+    </div>
+
+    <p class="tagline">Welcome back. Pick up where you left off.</p>
+
+    <form id="login-form" action="#" novalidate>
+      <h2>Log in</h2>
+
+      <div class="input-field">
+        <input type="email" id="email" name="email" autocomplete="email" required>
+        <label for="email">Enter your email</label>
+      </div>
+
+      <div class="input-field">
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+        <label for="password">Enter your password</label>
+        <button type="button" class="toggle" data-target="password" aria-label="Show password">Show</button>
+      </div>
+
+      <div class="forget">
+        <label for="remember">
+          <input type="checkbox" id="remember" checked>
+          <p>Remember me</p>
+        </label>
+        <a href="#" id="forgot">Forgot password?</a>
+      </div>
+
+      <div class="error-msg" id="form-error" role="alert"></div>
+      <button type="submit">Log in</button>
+
+      <div class="register">
+        <p>New here? <a href="register.html">Create an account</a></p>
+      </div>
+    </form>
+
+  </div>
+</body>
+</html>

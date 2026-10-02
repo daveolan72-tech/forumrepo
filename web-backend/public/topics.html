@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forum | Topics</title>
+  <link rel="icon" type="images/png" href="images/fr.png">
+  <link rel="stylesheet" href="css/topics.css">
+</head>
+<body>
+
+  <header class="site-header">
+    <a class="brand" href="home.html"><img src="images/logo.png" alt="Logo" class="brand-logo" style="height: 50px; width: 105px;"></a>
+    <nav class="nav" aria-label="Main">
+      <a href="home.html">Home</a>
+      <a class="active" href="topics.html" aria-current="page">All topics</a>
+      <a href="guidelines.html">Guidelines</a>
+    </nav>
+
+    <a class="login-btn" href="login.html" id="auth-out" hidden>Log in</a>
+
+    <div class="header-actions" id="auth-in" hidden>
+      <details class="menu" id="user-menu">
+        <summary aria-label="Account menu"><span class="avatar" id="avatar"></span><span class="name" id="username"></span></summary>
+        <div class="menu-list">
+          <div class="menu-email" id="user-email"></div>
+          <hr>
+          <a href="account.html?tab=profile">Your profile</a>
+          <a href="account.html?tab=topics">Your topics</a>
+          <a href="account.html?tab=settings">Settings</a>
+          <hr>
+          <a href="index.html" id="logout">Log out</a>
+        </div>
+      </details>
+    </div>
+  </header>
+
+  <main class="topics-layout">
+    <aside class="sidebar">
+      <div class="panel">
+        <h2>Categories</h2>
+        <div class="cats" id="cats"></div>
+      </div>
+    </aside>
+
+    <section>
+      <form class="composer topics-composer" id="composer" action="#" hidden>
+        <div class="composer-row">
+          <span class="avatar" id="composer-avatar" aria-hidden="true"></span>
+          <input type="text" id="composer-title" placeholder="Start a new topic" aria-label="Topic title" maxlength="140" autocomplete="off">
+          <button class="btn btn-primary" type="submit" id="post-btn">Post</button>
+        </div>
+        <div class="composer-extra">
+          <div class="composer-extra-inner">
+            <div class="composer-tools">
+              <select id="composer-cat" class="composer-select" aria-label="Select category" required>
+                <option value="" disabled selected>Select category</option>
+              </select>
+              <button type="button" class="btn btn-ghost" id="composer-cancel">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <p class="composer-error" id="composer-error" role="alert"></p>
+      </form>
+      <hr class="divider">
+
+      <form class="search topics-search" role="search" action="#" id="search-form">
+        <input type="search" id="search" placeholder="Search topics, categories or people" aria-label="Search topics" autocomplete="off">
+        <button type="submit">Search</button>
+      </form>
+
+      <div class="toolbar">
+        <div class="sorts" id="sorts">
+          <button class="sort-btn" data-sort="hot" aria-pressed="true">Hot</button>
+          <button class="sort-btn" data-sort="new" aria-pressed="false">New</button>
+          <button class="sort-btn" data-sort="top" aria-pressed="false">Top</button>
+        </div>
+        <span class="result-count" id="count" aria-live="polite"></span>
+      </div>
+
+      <p class="notice" id="db-notice" hidden>Couldn't load saved topics. Check that Firestore is created and your rules allow reads.</p>
+      <div class="post-list" id="posts"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>&copy; 2026 Forum. <a href="guidelines.html">Guidelines</a> &middot; <a href="privacy.html">Privacy</a> &middot; <a href="contact.html">Contact</a></p>
+  </footer>
+
+  <script type="module">
+    import { auth } from "./firebase-config.js";
+    import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.2/firebase-auth.js";
+    import { getApp } from "https://www.gstatic.com/firebasejs/10.7.2/firebase-app.js";
+    import { initializeFirestore, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, deleteDoc, doc, getDoc, where, writeBatch, increment, setDoc } from "https://www.gstatic.com/firebasejs/10.7.2/firebase-firestore.js";
+
+    // firebase-config.js already initialised the app, so reuse it
+    // Auto-switches to long polling if the network, VPN or antivirus blocks Firestore's default connection
+    const db = initializeFirestore(getApp(), { experimentalAutoDetectLongPolling: true });
+
+    /* ---------- Header: adapt to login state ---------- */
+    //admin access for moderating, also for subscriptions
+    let currentName = "you";
+    let currentUid = null;
+    let isAdmin = false; // true if this account has a document in the "admins" collection
+    let unsubVotes = null; // live listener for the signed-in user's own votes
+    let unsubSubs = null; // live listener for the signed-in user's subscriptions
+    const subscriptions = {}; // topicId -> true
+
+    const menu = document.getElementById("user-menu");
+    document.addEventListener("click", (e) => { if (!menu.contains(e.target)) menu.removeAttribute("open"); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") menu.removeAttribute("open"); });
+
+    onAuthStateChanged(auth, (user) => {
+      document.getElementById("auth-in").hidden = !user;
+      document.getElementById("auth-out").hidden = !!user;
+      document.getElementById("composer").hidden = !user;
+      if (unsubVotes) { unsubVotes(); unsubVotes = null; }
+      isAdmin = false;
+      if (!user) { currentUid = null; Object.keys(votes).forEach((k) => delete votes[k]); render(); return; }
+      const name = user.displayName || user.email.split("@")[0];
+      currentName = name;
+      currentUid = user.uid;
+      document.getElementById("composer-avatar").textContent = name[0].toUpperCase();
+      document.getElementById("username").textContent = name;
+      document.getElementById("user-email").textContent = user.email;
+      document.getElementById("avatar").textContent = name[0].toUpperCase();
+      // Load this user's saved votes so the arrows show the right state
+      unsubVotes = onSnapshot(
+        query(collection(db, "votes"), where("uid", "==", user.uid)),
+        (snap) => {
+          Object.keys(votes).forEach((k) => delete votes[k]);
+          snap.forEach((d) => { const v = d.data(); votes[v.topicId] = v.dir; });
+          render();
+        },
+        (error) => console.error(error.code, error.message)
+      );
+      unsubSubs = onSnapshot(
+        query(collection(db, "subscriptions"), where("uid", "==", user.uid)),
+        (snap) => {
+          Object.keys(subscriptions).forEach((k) => delete subscriptions[k]);
+          snap.forEach((d) => { subscriptions[d.data().topicId] = true; });
+          render();
+        },
+        (error) => console.error(error.code, error.message)
+      );
+      render();
+      // Admin check: the rules only let you read your own admins/<uid> document
+      // It only decides whether to SHOW the buttons; Firestore's rules are what actually allow the delete.
+      // Nag tagal sobra dine
+      getDoc(doc(db, "admins", user.uid)).then((d) => {
+        if (d.exists() && currentUid === user.uid) { isAdmin = true; render(); }
+      }).catch((error) => console.error(error.code, error.message));
+    });
+
+    document.getElementById("logout").addEventListener("click", async (e) => {
+      e.preventDefault();
+      try { await signOut(auth); window.location.href = "index.html"; }
+      catch (error) { console.error(error.code, error.message); }
+    });
+
+    /* ---------- Topics (loaded live from Firestore) ---------- */
+    let topics = [];
+    const categories = ["General", "Help & Support", "Showcase", "Feedback", "Off-topic"];
+
+    const params = new URLSearchParams(location.search);
+    const state = {
+      cat: categories.includes(params.get("cat")) ? params.get("cat") : "All",
+      sort: "hot",
+      q: (params.get("q") || "").trim()
+    };
+    const votes = {}; // topicId -> -1, 0 or 1 (the signed-in user's saved votes)
+
+    const $posts = document.getElementById("posts");
+    const $count = document.getElementById("count");
+    const $search = document.getElementById("search");
+    $search.value = state.q;
+
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const scoreOf = (t) => t.score; // saved score already includes every vote
+    // Saved topics carry a timestamp; samples carry a fixed age in minutes
+    const ageOf = (t) => t.createdAt ? Math.max(0, Math.floor((Date.now() - t.createdAt) / 60000)) : t.age;
+    // Math ng days
+    function timeAgo(m) {
+      if (m < 1) return "just now";
+      if (m < 60) return m + " min ago";
+      if (m < 1440) return Math.floor(m / 60) + " hr ago";
+      const d = Math.floor(m / 1440);
+      return d + (d === 1 ? " day ago" : " days ago");
+    }
+
+    /* Categories sidebar */
+    function renderCats() {
+      const all = [["All", topics.length], ...categories.map((c) => [c, topics.filter((t) => t.cat === c).length])];
+      document.getElementById("cats").innerHTML = all.map(([name, n]) =>
+        `<button class="cat-btn" data-cat="${esc(name)}" aria-pressed="${state.cat === name}">${name === "All" ? "All topics" : esc(name)}<span>${n}</span></button>`
+      ).join("");
+    }
+
+    /* Topic list */
+    function visibleTopics() {
+      const q = state.q.toLowerCase();
+      const list = topics.filter((t) =>
+        (state.cat === "All" || t.cat === state.cat) &&
+        (!q || (t.title + " " + t.cat + " " + t.author).toLowerCase().includes(q))
+      );
+      const hot = (t) => scoreOf(t) / Math.pow(ageOf(t) / 60 + 2, 1.5);
+      if (state.sort === "new") list.sort((a, b) => ageOf(a) - ageOf(b));
+      else if (state.sort === "top") list.sort((a, b) => scoreOf(b) - scoreOf(a));
+      else list.sort((a, b) => hot(b) - hot(a));
+      return list;
+    }
+
+    function postHTML(t) {
+      const v = votes[t.id] || 0;
+      return `<article class="post" data-id="${t.id}">
+        <div class="votes">
+          <button class="vote-btn up${v === 1 ? " on" : ""}" data-dir="1" aria-label="Upvote" aria-pressed="${v === 1}">&#9650;</button>
+          <span class="score">${scoreOf(t)}</span>
+          <button class="vote-btn down${v === -1 ? " on" : ""}" data-dir="-1" aria-label="Downvote" aria-pressed="${v === -1}">&#9660;</button>
+        </div>
+        <a class="post-body" href="topic.html?id=${t.id}">
+          <span class="tag">${esc(t.cat)}</span>
+          <h3>${esc(t.title)}</h3>
+          <div class="meta">Posted by ${esc(t.author)} &middot; ${timeAgo(ageOf(t))} &middot; ${t.replies} replies</div>
+        </a>
+        ${currentUid ? `<div class="post-actions">
+          <button class="sub-btn${subscriptions[t.id] ? " on" : ""}" type="button" aria-label="${subscriptions[t.id] ? "Unsubscribe" : "Subscribe"} to topic" aria-pressed="${!!subscriptions[t.id]}">${subscriptions[t.id] ? "Subscribed" : "Subscribe"}</button>
+          ${(isAdmin || (t.authorUid && t.authorUid === currentUid)) ? '<button class="delete-btn" type="button" aria-label="Delete topic">Delete</button>' : ""}
+        </div>` : ""}
+      </article>`;
+    }
+
+    function render() {
+      // Remember which vote button has focus so a live update doesn't drop it
+      const a = document.activeElement;
+      const fPost = a && a.closest ? a.closest(".post") : null;
+      const fId = fPost ? fPost.dataset.id : null;
+      const fSel = a && a.classList ? (a.classList.contains("up") ? ".up" : a.classList.contains("down") ? ".down" : null) : null;
+      const list = visibleTopics();
+      $posts.innerHTML = list.length
+        ? list.map(postHTML).join("")
+        : `<div class="empty">${topics.length ? `No topics found${state.q ? ` for &ldquo;${esc(state.q)}&rdquo;` : ""}. Try a different search or category.` : "No topics yet. Be the first to post!"}</div>`;
+      $count.textContent = list.length + (list.length === 1 ? " topic" : " topics");
+      renderCats();
+      document.querySelectorAll(".sort-btn").forEach((b) => b.setAttribute("aria-pressed", b.dataset.sort === state.sort));
+      if (fId && fSel) {
+        const el = $posts.querySelector(`.post[data-id="${CSS.escape(fId)}"] ${fSel}`);
+        if (el) el.focus();
+      }
+    }
+
+    /* Events */
+    $search.addEventListener("input", () => { state.q = $search.value.trim(); render(); });
+    document.getElementById("search-form").addEventListener("submit", (e) => e.preventDefault());
+
+    document.getElementById("cats").addEventListener("click", (e) => {
+      const btn = e.target.closest(".cat-btn");
+      if (!btn) return;
+      state.cat = btn.dataset.cat;
+      render();
+    });
+
+    document.getElementById("sorts").addEventListener("click", (e) => {
+      const btn = e.target.closest(".sort-btn");
+      if (!btn) return;
+      state.sort = btn.dataset.sort;
+      render();
+    });
+
+    /* ---------- Voting (saved to Firestore) ---------- */
+    // One vote doc per user per topic (id = uid_topicId) plus a +/- change to the topic's score,
+    // written together in one batch so they can never get out of sync.
+    const voting = new Set();
+    $posts.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".vote-btn");
+      if (!btn) return;
+      if (!currentUid) { window.location.href = "login.html"; return; }
+      const id = btn.closest(".post").dataset.id;
+      if (voting.has(id)) return; // ignore clicks while a vote is saving
+      const dir = Number(btn.dataset.dir);
+      const old = votes[id] || 0;
+      const next = old === dir ? 0 : dir; // clicking the same arrow again removes your vote
+      voting.add(id);
+      try {
+        const batch = writeBatch(db);
+        batch.set(doc(db, "votes", currentUid + "_" + id), { uid: currentUid, topicId: id, dir: next });
+        batch.update(doc(db, "topics", id), { score: increment(next - old) });
+        await batch.commit(); // the live listeners update the numbers and arrows
+      } catch (error) {
+        console.error(error.code, error.message);
+        alert(error.code === "permission-denied"
+          ? "Firestore blocked this vote. Check that your security rules include the votes rules."
+          : "Couldn't save your vote. Try again.");
+      } finally {
+        voting.delete(id);
+      }
+    });
+
+    /* ---------- Topic subscriptions ---------- */
+    const subscribing = new Set();
+    $posts.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".sub-btn");
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (!currentUid) { window.location.href = "login.html"; return; }
+      const id = btn.closest(".post").dataset.id;
+      if (subscribing.has(id)) return;
+      subscribing.add(id);
+      btn.disabled = true;
+      const subRef = doc(db, "subscriptions", currentUid + "_" + id);
+      try {
+        if (subscriptions[id]) {
+          await deleteDoc(subRef);
+        } else {
+          await setDoc(subRef, { uid: currentUid, topicId: id, createdAt: serverTimestamp() });
+        }
+      } catch (error) {
+        console.error(error.code, error.message);
+        alert(error.code === "permission-denied"
+          ? "Firestore blocked this subscription. Check that your subscriptions rules are published."
+          : "Couldn't update your subscription. Try again.");
+        btn.disabled = false;
+      } finally {
+        subscribing.delete(id);
+      }
+    });
+
+    /* ---------- Delete your own topic ---------- */
+    $posts.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".delete-btn");
+      if (!btn) return;
+      const id = btn.closest(".post").dataset.id;
+      if (!confirm("Delete this topic? This can't be undone.")) return;
+      btn.disabled = true;
+      try {
+        await deleteDoc(doc(db, "topics", id)); // the live listener removes the card
+      } catch (error) {
+        console.error(error.code, error.message);
+        btn.disabled = false;
+        alert(error.code === "permission-denied"
+          ? "Firestore blocked the delete. Check that your rules allow deleting this topic."
+          : "Couldn't delete the topic. Try again.");
+      }
+    });
+
+    /* ---------- Composer: expands when clicked, saves to Firestore ---------- */
+    const $composer = document.getElementById("composer");
+    const $title = document.getElementById("composer-title");
+    const $catSelect = document.getElementById("composer-cat");
+    const $composerError = document.getElementById("composer-error");
+    const $postBtn = document.getElementById("post-btn");
+
+    $catSelect.insertAdjacentHTML("beforeend", categories.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join(""));
+
+    const openComposer = () => $composer.classList.add("open");
+    const closeComposer = () => { $composer.classList.remove("open"); $composerError.textContent = ""; };
+    const resetComposer = () => { $title.value = ""; $catSelect.value = ""; closeComposer(); };
+
+    $composer.addEventListener("focusin", openComposer);
+    document.getElementById("composer-cancel").addEventListener("click", () => { resetComposer(); document.activeElement.blur(); });
+    $composer.addEventListener("keydown", (e) => { if (e.key === "Escape") { resetComposer(); document.activeElement.blur(); } });
+    // Clicking elsewhere closes it, unless you've already typed or chosen something
+    document.addEventListener("click", (e) => {
+      if (!$composer.contains(e.target) && !$title.value.trim() && !$catSelect.value) closeComposer();
+    });
+
+    $composer.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      $composerError.textContent = "";
+      const title = $title.value.trim();
+      const cat = $catSelect.value;
+
+      if (!title) { $title.focus(); $composerError.textContent = "Give your topic a title."; return; }
+      if (!cat) { openComposer(); $catSelect.focus(); $composerError.textContent = "Select a category for your topic."; return; }
+      if (!currentUid) return;
+
+      $postBtn.disabled = true;
+      $postBtn.textContent = "Posting...";
+      state.sort = "new"; state.cat = "All"; state.q = ""; $search.value = "";
+      try {
+        // If the database never confirms the save, give up after 10s and say so
+        const saving = addDoc(collection(db, "topics"), {
+          title, cat,
+          author: currentName,
+          authorUid: currentUid,
+          createdAt: serverTimestamp(),
+          replies: 0,
+          score: 1
+        });
+        const timeout = new Promise((_, reject) => setTimeout(() => reject({ code: "timeout" }), 10000));
+        await Promise.race([saving, timeout]);
+        resetComposer();
+        document.activeElement.blur();
+      } catch (error) {
+        console.error(error.code, error.message);
+        $composerError.textContent =
+          error.code === "permission-denied" ? "Firestore blocked this post. Check your security rules."
+          : error.code === "timeout" ? "Couldn't reach the database, so this post is NOT saved. Check that Firestore is created for this project and that no ad blocker is blocking it."
+          : "Couldn't post your topic. Try again.";
+      } finally {
+        $postBtn.disabled = false;
+        $postBtn.textContent = "Post";
+      }
+    });
+
+    /* ---------- Load saved topics (updates live) ---------- */
+    onSnapshot(
+      query(collection(db, "topics"), orderBy("createdAt", "desc"), limit(200)),
+      (snap) => {
+        const saved = snap.docs.map((d) => {
+          const x = d.data({ serverTimestamps: "estimate" });
+          return {
+            id: d.id, title: x.title, cat: x.cat, author: x.author, authorUid: x.authorUid,
+            replies: x.replies || 0, score: x.score || 0,
+            createdAt: x.createdAt ? x.createdAt.toMillis() : Date.now()
+          };
+        });
+        topics = saved;
+        document.getElementById("db-notice").hidden = true;
+        render();
+      },
+      (error) => {
+        console.error(error.code, error.message);
+        const notice = document.getElementById("db-notice");
+        notice.textContent = "Couldn't load saved topics (" + error.code + ") using project \"" + getApp().options.projectId + "\". Details: " + error.message;
+        notice.hidden = false;
+      }
+    );
+
+    render();
+  </script>
+</body>
+</html>

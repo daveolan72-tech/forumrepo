@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forum | Your account</title>
+  <link rel="icon" type="images/png" href="images/fr.png">
+  <link rel="stylesheet" href="css/topics.css">
+  <link rel="stylesheet" href="css/account.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="home.html"><img src="images/logo.png" alt="Logo" class="brand-logo" style="height: 50px; width: 105px;"></a>
+  <nav class="nav" aria-label="Main">
+    <a href="home.html">Home</a>
+    <a href="topics.html">Browse Topics</a>
+  </nav>
+  <div class="header-actions">
+    <details class="menu" id="user-menu">
+      <summary aria-label="Account menu"><span class="avatar" id="avatar"></span><span class="name" id="username"></span></summary>
+      <div class="menu-list">
+        <div class="menu-email" id="user-email"></div>
+        <hr>
+        <a href="account.html?tab=profile">Your profile</a>
+        <a href="account.html?tab=topics">Your topics</a>
+        <a href="account.html?tab=settings">Settings</a>
+        <hr>
+        <a href="index.html" id="logout">Log out</a>
+      </div>
+    </details>
+  </div>
+</header>
+
+<main class="account-page">
+  <div class="account-heading">
+    <div>
+      <p class="account-kicker">ACCOUNT</p>
+      <h1 id="page-title">Your profile</h1>
+      <p id="page-subtitle">See your activity, votes, notifications, and comments.</p>
+    </div>
+    <span class="avatar account-avatar" id="large-avatar"></span>
+  </div>
+
+  <div class="account-layout">
+    <aside class="panel account-nav">
+      <button class="account-tab" data-tab="profile">Your profile</button>
+      <button class="account-tab" data-tab="topics">Your topics</button>
+      <button class="account-tab" data-tab="settings">Settings</button>
+    </aside>
+
+    <section class="account-content">
+      <section class="account-section" id="profile-section">
+        <div class="panel account-card">
+          <div class="section-head">
+            <div><h2>Profile</h2><p id="profile-email"></p></div>
+          </div>
+          <div class="stats account-stats">
+            <div><b id="stat-topics">0</b><span>Topics</span></div>
+            <div><b id="stat-comments">0</b><span>Comments</span></div>
+            <div><b id="stat-votes">0</b><span>Votes</span></div>
+          </div>
+        </div>
+
+        <div class="account-columns">
+          <section class="panel account-card">
+            <div class="section-head"><h2>Upvoted topics</h2></div>
+            <div id="upvoted-list"><div class="empty">Loading...</div></div>
+          </section>
+          <section class="panel account-card">
+            <div class="section-head"><h2>Downvoted topics</h2></div>
+            <div id="downvoted-list"><div class="empty">Loading...</div></div>
+          </section>
+        </div>
+
+        <section class="panel account-card">
+          <div class="section-head"><h2>Notifications</h2><button class="text-btn" id="mark-notifications-read" hidden>Mark all read</button></div>
+          <div id="account-notifications"><div class="empty">Loading...</div></div>
+        </section>
+
+        <section class="panel account-card">
+          <div class="section-head"><h2>Your comments</h2></div>
+          <div id="comments-list"><div class="empty">Loading...</div></div>
+        </section>
+      </section>
+
+      <section class="account-section" id="topics-section" hidden>
+        <section class="panel account-card">
+          <div class="section-head"><h2>Your topics</h2><span class="section-count" id="topics-count"></span></div>
+          <div id="my-topics"><div class="empty">Loading...</div></div>
+        </section>
+      </section>
+
+      <section class="account-section" id="settings-section" hidden>
+        <section class="panel account-card">
+          <div class="section-head"><h2>Change password</h2></div>
+          <p class="settings-help">Enter your current password and choose a new one.</p>
+          <form id="password-form" class="account-form">
+            <label>Current password<input type="password" id="current-password" required autocomplete="current-password"></label>
+            <label>New password<input type="password" id="new-password" required minlength="6" autocomplete="new-password"></label>
+            <label>Confirm new password<input type="password" id="confirm-password" required minlength="6" autocomplete="new-password"></label>
+            <button class="btn btn-primary" type="submit" id="password-btn">Change password</button>
+            <p class="form-message" id="password-message" role="alert"></p>
+          </form>
+        </section>
+
+        <section class="panel account-card">
+          <div class="section-head"><h2>Help</h2></div>
+          <p class="settings-help">Need help using the forum? Here are a few quick answers.</p>
+          <div class="help-list">
+            <details><summary>How do I post a topic?</summary><p>Go to Home or Browse Topics, enter your topic title, choose a category, then press Post.</p></details>
+            <details><summary>How do votes work?</summary><p>Use the up or down arrow beside a topic. Clicking the same arrow again removes your vote.</p></details>
+            <details><summary>How do notifications work?</summary><p>Subscribe to a topic to receive notifications when new replies are posted.</p></details>
+            <details><summary>I still need help</summary><p>You can contact the forum administrator through the contact information provided by your forum.</p></details>
+          </div>
+        </section>
+
+        <section class="panel account-card danger-card">
+          <div class="section-head"><h2>Delete account</h2></div>
+          <p class="settings-help">This permanently deletes your sign-in account. This action cannot be undone.</p>
+          <form id="delete-form" class="account-form">
+            <label>Current password<input type="password" id="delete-password" required autocomplete="current-password"></label>
+            <button class="btn danger-btn" type="submit" id="delete-btn">Delete account</button>
+            <p class="form-message" id="delete-message" role="alert"></p>
+          </form>
+        </section>
+      </section>
+    </section>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <p>&copy; 2026 Forum. <a href="guidelines.html">Guidelines</a> &middot; <a href="privacy.html">Privacy</a> &middot; <a href="contact.html">Contact</a></p>
+</footer>
+
+<script type="module" src="account.js"></script>
+</body>
+</html>
